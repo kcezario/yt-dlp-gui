@@ -11,6 +11,14 @@ import yt_dlp
 from yt_dlp import YoutubeDL
 
 from config import Config
+from services.constants import (
+    FFMPEG_AUDIO_OPTS,
+    FFMPEG_VIDEO_OPTS,
+    FILENAME_TEMPLATE,
+    YDL_EXTRACTOR_ARGS_YOUTUBE,
+    YDL_HTTP_HEADERS,
+    YDL_OPTS_BASE,
+)
 from utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -69,45 +77,26 @@ class DownloadManager:
         os.makedirs(output_path, exist_ok=True)
 
         # Template de nome do arquivo
-        filename_template = os.path.join(output_path, "%(title)s.%(ext)s")
+        filename_template = os.path.join(output_path, FILENAME_TEMPLATE)
 
         # Opções base
         opts: Dict = {
             "outtmpl": filename_template,
-            "quiet": True,
-            "no_warnings": True,
+            **YDL_OPTS_BASE,
             "progress_hooks": [self._create_progress_hook(on_progress)] if on_progress else [],
-            # Opções para contornar bloqueios do YouTube
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["android", "web"],  # Tenta diferentes clientes
-                }
-            },
-            # Headers para parecer um navegador real
-            "http_headers": {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            },
+            "extractor_args": YDL_EXTRACTOR_ARGS_YOUTUBE,
+            "http_headers": YDL_HTTP_HEADERS,
         }
 
         # Configurações específicas por modo
         if mode.lower() == "mp3":
             # Download apenas de áudio (MP3)
-            opts.update({
-                "format": "bestaudio/best",
-                "postprocessors": [{
-                    "key": "FFmpegExtractAudio",
-                    "preferredcodec": "mp3",
-                    "preferredquality": "192",
-                }],
-            })
+            opts.update(FFMPEG_AUDIO_OPTS)
             if self._ffmpeg_path:
                 opts["ffmpeg_location"] = self._ffmpeg_path
         else:
             # Download de vídeo (MP4)
-            opts.update({
-                "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-                "merge_output_format": "mp4",
-            })
+            opts.update(FFMPEG_VIDEO_OPTS)
             if self._ffmpeg_path:
                 opts["ffmpeg_location"] = self._ffmpeg_path
 

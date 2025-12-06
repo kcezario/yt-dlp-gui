@@ -9,9 +9,19 @@ from tkinter import messagebox, ttk
 from typing import Callable, Optional
 
 from database.connection import DBConnection
+from database.constants import SQL_DELETE_HISTORY
 from database.dao import HistoryDAO
 from config import Config
+from typing import Optional
 from ui.components.video_list import VideoList
+from ui.constants import (
+    COLUMNS_HISTORY,
+    COLUMN_WIDTHS_HISTORY,
+    FONT_TITLE,
+    HISTORY_BUTTON_REFRESH,
+    HISTORY_TITLE,
+    PADDING_DEFAULT,
+)
 from utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -43,7 +53,7 @@ class HistoryTab:
     def _setup_ui(self) -> None:
         """Configura a interface gráfica da aba."""
         # Container principal
-        main_container = ttk.Frame(self.frame, padding="10")
+        main_container = ttk.Frame(self.frame, padding=PADDING_DEFAULT)
         main_container.pack(fill=tk.BOTH, expand=True)
 
         # Título e botão de atualizar
@@ -52,31 +62,23 @@ class HistoryTab:
 
         title_label = ttk.Label(
             header_frame,
-            text="Histórico de Downloads",
-            font=("", 14, "bold")
+            text=HISTORY_TITLE,
+            font=FONT_TITLE
         )
         title_label.pack(side=tk.LEFT)
 
         refresh_button = ttk.Button(
             header_frame,
-            text="Atualizar",
+            text=HISTORY_BUTTON_REFRESH,
             command=self.load_history
         )
         refresh_button.pack(side=tk.RIGHT)
 
         # Lista de vídeos
-        columns = ["Título", "Status", "Data", "Caminho"]
-        column_widths = {
-            "Título": 300,
-            "Status": 100,
-            "Data": 150,
-            "Caminho": 200,
-        }
-
         self.video_list = VideoList(
             main_container,
-            columns=columns,
-            column_widths=column_widths,
+            columns=COLUMNS_HISTORY,
+            column_widths=COLUMN_WIDTHS_HISTORY,
             on_select=self._on_item_select
         )
         
@@ -139,13 +141,15 @@ class HistoryTab:
             return "..." + path[-47:]
         return path
 
-    def load_history(self, limit: int = 50) -> None:
+    def load_history(self, limit: Optional[int] = None) -> None:
         """
         Carrega o histórico de downloads do banco de dados.
         
         Args:
-            limit: Número máximo de registros a carregar.
+            limit: Número máximo de registros a carregar (padrão: Config.HISTORY_LIMIT_DEFAULT).
         """
+        if limit is None:
+            limit = Config.HISTORY_LIMIT_DEFAULT
         try:
             history_data = self.history_dao.get_history(limit=limit)
             
@@ -251,7 +255,7 @@ class HistoryTab:
         
         try:
             cursor = self.db.connection.cursor()
-            cursor.execute("DELETE FROM history WHERE id = ?", (history_id,))
+            cursor.execute(SQL_DELETE_HISTORY, (history_id,))
             self.db.connection.commit()
             
             log.info(f"Item {history_id} deletado do histórico")

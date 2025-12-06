@@ -3,6 +3,12 @@
 from config import Config
 from database.connection import DBConnection
 from services.queue_manager import QueueManager
+from ui.constants import (
+    TAB_DOWNLOAD,
+    TAB_HISTORY,
+    TAB_QUEUE,
+    TAB_SETTINGS,
+)
 from ui.root import MainWindow
 from ui.tabs.download_tab import DownloadTab
 from ui.tabs.history_tab import HistoryTab
@@ -58,21 +64,21 @@ def main() -> None:
         queue_manager=queue_manager,
         queue_tab_ref=refresh_queue
     )
-    app.add_tab("Download", download_tab.frame)
+    app.add_tab(TAB_DOWNLOAD, download_tab.frame)
 
     # Adiciona aba de fila
-    app.add_tab("Fila de Downloads", queue_tab.frame)
+    app.add_tab(TAB_QUEUE, queue_tab.frame)
 
     # Adiciona aba de histórico depois
     if db:
-        app.add_tab("Histórico", history_tab.frame)
+        app.add_tab(TAB_HISTORY, history_tab.frame)
 
     # Adiciona aba de configurações
     settings_tab = SettingsTab(app.notebook)
-    app.add_tab("Configurações", settings_tab.frame)
+    app.add_tab(TAB_SETTINGS, settings_tab.frame)
 
     # Seleciona a aba "Download" como inicial
-    app.select_tab("Download")
+    app.select_tab(TAB_DOWNLOAD)
 
     # Inicia aplicação
     log.info("Interface gráfica pronta")

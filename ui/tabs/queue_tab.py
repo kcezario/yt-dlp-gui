@@ -6,6 +6,16 @@ from typing import Callable, Optional
 
 from services.queue_manager import DownloadStatus, QueueManager
 from ui.components.video_list import VideoList
+from ui.constants import (
+    COLUMNS_QUEUE,
+    COLUMN_WIDTHS_QUEUE,
+    FONT_TITLE,
+    PADDING_DEFAULT,
+    QUEUE_BUTTON_CLEAR,
+    QUEUE_BUTTON_PAUSE,
+    QUEUE_BUTTON_RESUME,
+    QUEUE_TITLE,
+)
 from utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -39,7 +49,7 @@ class QueueTab:
     def _setup_ui(self) -> None:
         """Configura a interface gráfica da aba."""
         # Container principal
-        main_container = ttk.Frame(self.frame, padding="10")
+        main_container = ttk.Frame(self.frame, padding=PADDING_DEFAULT)
         main_container.pack(fill=tk.BOTH, expand=True)
 
         # Título e botões de controle
@@ -48,8 +58,8 @@ class QueueTab:
 
         title_label = ttk.Label(
             header_frame,
-            text="Fila de Downloads",
-            font=("", 14, "bold")
+            text=QUEUE_TITLE,
+            font=FONT_TITLE
         )
         title_label.pack(side=tk.LEFT)
 
@@ -59,14 +69,14 @@ class QueueTab:
 
         self.pause_button = ttk.Button(
             button_frame,
-            text="Pausar",
+            text=QUEUE_BUTTON_PAUSE,
             command=self._pause_queue
         )
         self.pause_button.pack(side=tk.LEFT, padx=(0, 5))
 
         self.resume_button = ttk.Button(
             button_frame,
-            text="Retomar",
+            text=QUEUE_BUTTON_RESUME,
             command=self._resume_queue,
             state=tk.DISABLED
         )
@@ -74,24 +84,16 @@ class QueueTab:
 
         self.clear_button = ttk.Button(
             button_frame,
-            text="Limpar Concluídos",
+            text=QUEUE_BUTTON_CLEAR,
             command=self._clear_completed
         )
         self.clear_button.pack(side=tk.LEFT)
 
         # Lista de downloads
-        columns = ["Vídeo", "Status", "Progresso", "Ação"]
-        column_widths = {
-            "Vídeo": 350,
-            "Status": 120,
-            "Progresso": 150,
-            "Ação": 100,
-        }
-
         self.video_list = VideoList(
             main_container,
-            columns=columns,
-            column_widths=column_widths,
+            columns=COLUMNS_QUEUE,
+            column_widths=COLUMN_WIDTHS_QUEUE,
             on_select=self._on_item_select
         )
         

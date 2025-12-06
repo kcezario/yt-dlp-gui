@@ -6,6 +6,21 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from config import Config
+from ui.constants import (
+    DIALOG_BROWSE_DOWNLOAD_FOLDER,
+    DIALOG_BROWSE_FFMPEG,
+    FONT_HELP,
+    FONT_TITLE,
+    PADDING_DEFAULT,
+    SETTINGS_BUTTON_APPLY,
+    SETTINGS_BUTTON_RESET,
+    SETTINGS_DOWNLOAD_PATH_LABEL,
+    SETTINGS_FFMPEG_HELP,
+    SETTINGS_FFMPEG_LABEL,
+    SETTINGS_INFO_LABEL,
+    SETTINGS_INFO_TEXT,
+    SETTINGS_TITLE,
+)
 from utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -31,22 +46,22 @@ class SettingsTab:
     def _setup_ui(self) -> None:
         """Configura a interface gráfica da aba."""
         # Container principal
-        main_container = ttk.Frame(self.frame, padding="10")
+        main_container = ttk.Frame(self.frame, padding=PADDING_DEFAULT)
         main_container.pack(fill=tk.BOTH, expand=True)
 
         # Título
         title_label = ttk.Label(
             main_container,
-            text="Configurações",
-            font=("", 14, "bold")
+            text=SETTINGS_TITLE,
+            font=FONT_TITLE
         )
         title_label.pack(pady=(0, 20))
 
         # Frame para caminho padrão de downloads
         download_path_frame = ttk.LabelFrame(
             main_container,
-            text="Pasta Padrão de Downloads",
-            padding="10"
+            text=SETTINGS_DOWNLOAD_PATH_LABEL,
+            padding=PADDING_DEFAULT
         )
         download_path_frame.pack(fill=tk.X, pady=(0, 10))
 
@@ -68,17 +83,16 @@ class SettingsTab:
         # Frame para caminho do FFmpeg
         ffmpeg_frame = ttk.LabelFrame(
             main_container,
-            text="Caminho do FFmpeg (Opcional)",
-            padding="10"
+            text=SETTINGS_FFMPEG_LABEL,
+            padding=PADDING_DEFAULT
         )
         ffmpeg_frame.pack(fill=tk.X, pady=(0, 10))
 
         help_label = ttk.Label(
             ffmpeg_frame,
-            text="FFmpeg é necessário apenas para downloads de áudio (MP3).\n"
-                 "Se não especificado, o sistema tentará encontrá-lo automaticamente.",
+            text=SETTINGS_FFMPEG_HELP,
             foreground="gray",
-            font=("", 9)
+            font=FONT_HELP
         )
         help_label.pack(anchor=tk.W, pady=(0, 5))
 
@@ -107,20 +121,16 @@ class SettingsTab:
         # Frame para informações
         info_frame = ttk.LabelFrame(
             main_container,
-            text="Informações",
-            padding="10"
+            text=SETTINGS_INFO_LABEL,
+            padding=PADDING_DEFAULT
         )
         info_frame.pack(fill=tk.X, pady=(0, 10))
 
-        info_text = (
-            "Nota: As configurações são temporárias nesta versão.\n"
-            "Para salvar permanentemente, edite o arquivo .env ou config.py"
-        )
         info_label = ttk.Label(
             info_frame,
-            text=info_text,
+            text=SETTINGS_INFO_TEXT,
             foreground="gray",
-            font=("", 9)
+            font=FONT_HELP
         )
         info_label.pack(anchor=tk.W)
 
@@ -130,14 +140,14 @@ class SettingsTab:
 
         save_button = ttk.Button(
             button_frame,
-            text="Aplicar Configurações",
+            text=SETTINGS_BUTTON_APPLY,
             command=self._apply_settings
         )
         save_button.pack(side=tk.LEFT, padx=(0, 5))
 
         reset_button = ttk.Button(
             button_frame,
-            text="Restaurar Padrões",
+            text=SETTINGS_BUTTON_RESET,
             command=self._reset_settings
         )
         reset_button.pack(side=tk.LEFT)
@@ -146,7 +156,7 @@ class SettingsTab:
         """Abre diálogo para selecionar pasta de downloads padrão."""
         folder = filedialog.askdirectory(
             initialdir=self.download_path_var.get(),
-            title="Selecione a pasta padrão de downloads"
+            title=DIALOG_BROWSE_DOWNLOAD_FOLDER
         )
         if folder:
             self.download_path_var.set(folder)
@@ -159,7 +169,7 @@ class SettingsTab:
             filetypes = [("Executável", "*"), ("Todos os arquivos", "*.*")]
         
         file_path = filedialog.askopenfilename(
-            title="Selecione o executável do FFmpeg",
+            title=DIALOG_BROWSE_FFMPEG,
             filetypes=filetypes
         )
         if file_path:

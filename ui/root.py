@@ -5,6 +5,13 @@ from tkinter import ttk
 from typing import Optional
 
 from config import Config
+from ui.constants import (
+    THEME_DEFAULT,
+    WINDOW_MIN_SIZE,
+    WINDOW_PADDING,
+    WINDOW_SIZE,
+    WINDOW_TITLE,
+)
 from utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -21,17 +28,17 @@ class MainWindow:
     def __init__(self) -> None:
         """Inicializa a janela principal."""
         self.root = tk.Tk()
-        self.root.title("YT-Downloader Pro")
-        self.root.geometry("800x600")
-        self.root.minsize(600, 400)
+        self.root.title(WINDOW_TITLE)
+        self.root.geometry(WINDOW_SIZE)
+        self.root.minsize(WINDOW_MIN_SIZE[0], WINDOW_MIN_SIZE[1])
 
         # Configura tema nativo
         style = ttk.Style()
-        style.theme_use("default")  # Usa tema padrão do sistema
+        style.theme_use(THEME_DEFAULT)
 
         # Cria notebook para abas
         self.notebook = ttk.Notebook(self.root)
-        self.notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.notebook.pack(fill=tk.BOTH, expand=True, padx=WINDOW_PADDING, pady=WINDOW_PADDING)
 
         # Dicionário para armazenar referências às abas
         self.tabs: dict[str, ttk.Frame] = {}

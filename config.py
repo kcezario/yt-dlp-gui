@@ -21,6 +21,12 @@ class Config:
 
     # Configurações de download
     FFMPEG_PATH: Optional[str] = os.getenv("FFMPEG_PATH", None)
+    
+    # Formatos suportados
+    SUPPORTED_FORMATS: list[str] = ["mp3", "mp4"]
+    
+    # Limite padrão de histórico
+    HISTORY_LIMIT_DEFAULT: int = 50
 
     @classmethod
     def ensure_directories(cls) -> None:

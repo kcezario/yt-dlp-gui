@@ -4,6 +4,18 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from database.connection import DBConnection
+from database.constants import (
+    SQL_DELETE_HISTORY,
+    SQL_INSERT_HISTORY,
+    SQL_INSERT_PLAYLIST,
+    SQL_INSERT_PLAYLIST_VIDEO,
+    SQL_INSERT_VIDEO,
+    SQL_SELECT_HISTORY,
+    SQL_SELECT_HISTORY_BY_VIDEO_ID,
+    SQL_SELECT_PLAYLIST_ITEMS,
+    SQL_SELECT_VIDEO_BY_ID,
+    SQL_UPDATE_HISTORY,
+)
 from utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -39,22 +51,7 @@ class VideoDAO:
         """
         try:
             cursor = self.db.connection.cursor()
-            cursor.execute("""
-                INSERT INTO videos (
-                    id, title, duration, channel, upload_date, url,
-                    file_path, thumbnail_url, description
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    title = excluded.title,
-                    duration = excluded.duration,
-                    channel = excluded.channel,
-                    upload_date = excluded.upload_date,
-                    url = excluded.url,
-                    file_path = excluded.file_path,
-                    thumbnail_url = excluded.thumbnail_url,
-                    description = excluded.description,
-                    updated_at = CURRENT_TIMESTAMP
-            """, (
+            cursor.execute(SQL_INSERT_VIDEO, (
                 data.get("id"),
                 data.get("title"),
                 data.get("duration"),
@@ -84,7 +81,7 @@ class VideoDAO:
         """
         try:
             cursor = self.db.connection.cursor()
-            cursor.execute("SELECT * FROM videos WHERE id = ?", (video_id,))
+            cursor.execute(SQL_SELECT_VIDEO_BY_ID, (video_id,))
             row = cursor.fetchone()
             if row:
                 return dict(row)
@@ -119,15 +116,7 @@ class PlaylistDAO:
         """
         try:
             cursor = self.db.connection.cursor()
-            cursor.execute("""
-                INSERT INTO playlists (id, title, description, url)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    title = excluded.title,
-                    description = excluded.description,
-                    url = excluded.url,
-                    updated_at = CURRENT_TIMESTAMP
-            """, (
+            cursor.execute(SQL_INSERT_PLAYLIST, (
                 data.get("id"),
                 data.get("title"),
                 data.get("description"),
@@ -151,12 +140,7 @@ class PlaylistDAO:
         """
         try:
             cursor = self.db.connection.cursor()
-            cursor.execute("""
-                INSERT INTO playlist_videos (playlist_id, video_id, position)
-                VALUES (?, ?, ?)
-                ON CONFLICT(playlist_id, video_id) DO UPDATE SET
-                    position = excluded.position
-            """, (playlist_id, video_id, position))
+            cursor.execute(SQL_INSERT_PLAYLIST_VIDEO, (playlist_id, video_id, position))
             self.db.connection.commit()
             log.debug(f"Vídeo {video_id} vinculado à playlist {playlist_id}")
         except Exception as e:
@@ -176,13 +160,7 @@ class PlaylistDAO:
         """
         try:
             cursor = self.db.connection.cursor()
-            cursor.execute("""
-                SELECT v.*, pv.position
-                FROM videos v
-                INNER JOIN playlist_videos pv ON v.id = pv.video_id
-                WHERE pv.playlist_id = ?
-                ORDER BY pv.position ASC
-            """, (playlist_id,))
+            cursor.execute(SQL_SELECT_PLAYLIST_ITEMS, (playlist_id,))
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
         except Exception as e:
@@ -222,12 +200,7 @@ class HistoryDAO:
         """
         try:
             cursor = self.db.connection.cursor()
-            cursor.execute("""
-                INSERT INTO history (
-                    video_id, playlist_id, status, file_path, file_size,
-                    download_started_at, download_completed_at, error_message
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
+            cursor.execute(SQL_INSERT_HISTORY, (
                 data.get("video_id"),
                 data.get("playlist_id"),
                 data.get("status"),
@@ -258,15 +231,7 @@ class HistoryDAO:
         """
         try:
             cursor = self.db.connection.cursor()
-            cursor.execute("""
-                SELECT h.*, v.title as video_title, v.url as video_url,
-                       p.title as playlist_title
-                FROM history h
-                LEFT JOIN videos v ON h.video_id = v.id
-                LEFT JOIN playlists p ON h.playlist_id = p.id
-                ORDER BY h.created_at DESC
-                LIMIT ?
-            """, (limit,))
+            cursor.execute(SQL_SELECT_HISTORY, (limit,))
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
         except Exception as e:

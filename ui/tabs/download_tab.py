@@ -12,10 +12,39 @@ import yt_dlp
 
 from config import Config
 from database.connection import DBConnection
+from database.constants import SQL_SELECT_HISTORY_BY_VIDEO_ID, SQL_UPDATE_HISTORY
 from database.dao import HistoryDAO, VideoDAO
+from services.constants import YDL_OPTS_EXTRACT_INFO, YDL_OPTS_EXTRACT_PLAYLIST
 from services.download_manager import DownloadManager
 from services.queue_manager import QueueManager
 from services.validation import validate_download_url
+from ui.constants import (
+    COLUMNS_QUEUE,
+    COLUMN_WIDTHS_QUEUE,
+    DIALOG_BROWSE_FOLDER,
+    DOWNLOAD_BUTTON,
+    DOWNLOAD_FORMAT_LABEL,
+    DOWNLOAD_FORMAT_MP3,
+    DOWNLOAD_FORMAT_MP4,
+    DOWNLOAD_PATH_LABEL,
+    DOWNLOAD_PROGRESS_LABEL,
+    DOWNLOAD_STATUS_EXTRACTING,
+    DOWNLOAD_STATUS_EXTRACTING_PLAYLIST,
+    DOWNLOAD_STATUS_READY,
+    DOWNLOAD_STATUS_STARTING,
+    DOWNLOAD_TITLE,
+    DOWNLOAD_TYPE_CHANNEL,
+    DOWNLOAD_TYPE_LABEL,
+    DOWNLOAD_TYPE_PLAYLIST,
+    DOWNLOAD_TYPE_VIDEO,
+    DOWNLOAD_URL_LABEL,
+    FONT_TITLE,
+    PADDING_DEFAULT,
+    STATUS_COLOR_BLUE,
+    STATUS_COLOR_GRAY,
+    STATUS_COLOR_GREEN,
+    STATUS_COLOR_RED,
+)
 from utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -72,26 +101,26 @@ class DownloadTab:
     def _setup_ui(self) -> None:
         """Configura a interface gráfica da aba."""
         # Container principal com padding
-        main_container = ttk.Frame(self.frame, padding="10")
+        main_container = ttk.Frame(self.frame, padding=PADDING_DEFAULT)
         main_container.pack(fill=tk.BOTH, expand=True)
 
         # Título
         title_label = ttk.Label(
             main_container,
-            text="Download de Vídeos",
-            font=("", 14, "bold")
+            text=DOWNLOAD_TITLE,
+            font=FONT_TITLE
         )
         title_label.pack(pady=(0, 20))
 
         # Frame para tipo de download
-        type_frame = ttk.LabelFrame(main_container, text="Tipo de Download", padding="10")
+        type_frame = ttk.LabelFrame(main_container, text=DOWNLOAD_TYPE_LABEL, padding=PADDING_DEFAULT)
         type_frame.pack(fill=tk.X, pady=(0, 10))
 
         self.download_type_var = tk.StringVar(value="video")
         
         video_radio = ttk.Radiobutton(
             type_frame,
-            text="Vídeo Único",
+            text=DOWNLOAD_TYPE_VIDEO,
             variable=self.download_type_var,
             value="video"
         )
@@ -99,7 +128,7 @@ class DownloadTab:
 
         playlist_radio = ttk.Radiobutton(
             type_frame,
-            text="Playlist",
+            text=DOWNLOAD_TYPE_PLAYLIST,
             variable=self.download_type_var,
             value="playlist"
         )
@@ -107,14 +136,14 @@ class DownloadTab:
 
         channel_radio = ttk.Radiobutton(
             type_frame,
-            text="Canal",
+            text=DOWNLOAD_TYPE_CHANNEL,
             variable=self.download_type_var,
             value="channel"
         )
         channel_radio.pack(side=tk.LEFT)
 
         # Frame para URL
-        url_frame = ttk.LabelFrame(main_container, text="URL", padding="10")
+        url_frame = ttk.LabelFrame(main_container, text=DOWNLOAD_URL_LABEL, padding=PADDING_DEFAULT)
         url_frame.pack(fill=tk.X, pady=(0, 10))
 
         self.url_entry = ttk.Entry(url_frame, width=60)
@@ -122,7 +151,7 @@ class DownloadTab:
         self.url_entry.bind("<Return>", lambda e: self._start_download())
 
         # Frame para seleção de pasta
-        path_frame = ttk.LabelFrame(main_container, text="Pasta de Destino", padding="10")
+        path_frame = ttk.LabelFrame(main_container, text=DOWNLOAD_PATH_LABEL, padding=PADDING_DEFAULT)
         path_frame.pack(fill=tk.X, pady=(0, 10))
 
         self.path_var = tk.StringVar(value=Config.DEFAULT_DOWNLOAD_PATH)
@@ -137,14 +166,14 @@ class DownloadTab:
         browse_button.pack(side=tk.LEFT)
 
         # Frame para formato
-        format_frame = ttk.LabelFrame(main_container, text="Formato", padding="10")
+        format_frame = ttk.LabelFrame(main_container, text=DOWNLOAD_FORMAT_LABEL, padding=PADDING_DEFAULT)
         format_frame.pack(fill=tk.X, pady=(0, 10))
 
         self.format_var = tk.StringVar(value="mp4")
         
         mp4_radio = ttk.Radiobutton(
             format_frame,
-            text="Vídeo (MP4)",
+            text=DOWNLOAD_FORMAT_MP4,
             variable=self.format_var,
             value="mp4"
         )
@@ -152,7 +181,7 @@ class DownloadTab:
 
         mp3_radio = ttk.Radiobutton(
             format_frame,
-            text="Áudio (MP3)",
+            text=DOWNLOAD_FORMAT_MP3,
             variable=self.format_var,
             value="mp3"
         )
@@ -164,14 +193,14 @@ class DownloadTab:
 
         self.download_button = ttk.Button(
             button_frame,
-            text="Baixar",
+            text=DOWNLOAD_BUTTON,
             command=self._start_download,
             state=tk.NORMAL
         )
         self.download_button.pack(side=tk.LEFT, padx=(0, 5))
 
         # Barra de progresso
-        progress_frame = ttk.LabelFrame(main_container, text="Progresso", padding="10")
+        progress_frame = ttk.LabelFrame(main_container, text=DOWNLOAD_PROGRESS_LABEL, padding=PADDING_DEFAULT)
         progress_frame.pack(fill=tk.X, pady=(0, 10))
 
         self.progress_var = tk.DoubleVar()
@@ -186,8 +215,8 @@ class DownloadTab:
 
         self.status_label = ttk.Label(
             progress_frame,
-            text="Pronto para baixar",
-            foreground="gray"
+            text=DOWNLOAD_STATUS_READY,
+            foreground=STATUS_COLOR_GRAY
         )
         self.status_label.pack(fill=tk.X)
 
@@ -195,7 +224,7 @@ class DownloadTab:
         """Abre diálogo para selecionar pasta de destino."""
         folder = filedialog.askdirectory(
             initialdir=self.path_var.get(),
-            title="Selecione a pasta de destino"
+            title=DIALOG_BROWSE_FOLDER
         )
         if folder:
             self.path_var.set(folder)
@@ -211,8 +240,7 @@ class DownloadTab:
             Dicionário com informações do vídeo ou None em caso de erro.
         """
         try:
-            ydl_opts = {"quiet": True, "no_warnings": True}
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            with yt_dlp.YoutubeDL(YDL_OPTS_EXTRACT_INFO) as ydl:
                 info = ydl.extract_info(url, download=False)
                 return {
                     "id": info.get("id", ""),
@@ -239,12 +267,7 @@ class DownloadTab:
             Lista de dicionários com informações dos vídeos.
         """
         try:
-            ydl_opts = {
-                "quiet": True,
-                "no_warnings": True,
-                "extract_flat": True,  # Extrai apenas metadados, não baixa
-            }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            with yt_dlp.YoutubeDL(YDL_OPTS_EXTRACT_PLAYLIST) as ydl:
                 info = ydl.extract_info(url, download=False)
                 
                 videos = []
@@ -310,7 +333,7 @@ class DownloadTab:
     def _download_single_video(self, url: str, path: str, mode: str) -> None:
         """Inicia download de um vídeo único."""
         # Extrai informações do vídeo
-        self.status_label.config(text="Extraindo informações do vídeo...", foreground="blue")
+        self.status_label.config(text=DOWNLOAD_STATUS_EXTRACTING, foreground=STATUS_COLOR_BLUE)
         video_info = self._extract_video_info(url)
         
         if not video_info:
@@ -323,7 +346,7 @@ class DownloadTab:
                 "Verifique sua conexão e tente novamente."
             )
             messagebox.showerror("Erro ao Extrair Informações", error_msg)
-            self.status_label.config(text="Erro ao extrair informações", foreground="red")
+            self.status_label.config(text="Erro ao extrair informações", foreground=STATUS_COLOR_RED)
             return
 
         self.current_video_info = video_info
@@ -352,7 +375,7 @@ class DownloadTab:
         self.download_button.config(state=tk.DISABLED)
         self.url_entry.config(state=tk.DISABLED)
         self.progress_var.set(0)
-        self.status_label.config(text="Iniciando download...", foreground="blue")
+        self.status_label.config(text=DOWNLOAD_STATUS_STARTING, foreground=STATUS_COLOR_BLUE)
 
         log.info(f"Iniciando download: {url} (modo: {mode})")
 
@@ -375,7 +398,7 @@ class DownloadTab:
             )
             return
 
-        self.status_label.config(text="Extraindo lista de vídeos...", foreground="blue")
+        self.status_label.config(text=DOWNLOAD_STATUS_EXTRACTING_PLAYLIST, foreground=STATUS_COLOR_BLUE)
         videos = self._extract_playlist_videos(url)
         
         if not videos:
@@ -388,7 +411,7 @@ class DownloadTab:
                 "Verifique sua conexão e tente novamente."
             )
             messagebox.showerror("Erro ao Extrair Playlist", error_msg)
-            self.status_label.config(text="Erro ao extrair playlist", foreground="red")
+            self.status_label.config(text="Erro ao extrair playlist", foreground=STATUS_COLOR_RED)
             return
 
         # Adiciona vídeos à fila
@@ -439,7 +462,7 @@ class DownloadTab:
         
         self.status_label.config(
             text=f"{added_count} vídeo(s) na fila",
-            foreground="green"
+            foreground=STATUS_COLOR_GREEN
         )
         
         # Atualiza aba de fila
@@ -500,10 +523,7 @@ class DownloadTab:
             try:
                 # Busca se já existe histórico para este vídeo
                 cursor = self.db.connection.cursor()
-                cursor.execute(
-                    "SELECT id FROM history WHERE video_id = ? ORDER BY created_at DESC LIMIT 1",
-                    (item.video_id,)
-                )
+                cursor.execute(SQL_SELECT_HISTORY_BY_VIDEO_ID, (item.video_id,))
                 existing = cursor.fetchone()
                 log.debug(f"Buscando histórico para vídeo {item.video_id}: {'encontrado' if existing else 'não encontrado'}")
                 
@@ -525,12 +545,7 @@ class DownloadTab:
                 if existing:
                     # Atualiza registro existente
                     history_id = existing["id"]
-                    cursor.execute("""
-                        UPDATE history 
-                        SET status = ?, download_completed_at = ?, 
-                            file_path = ?, file_size = ?, error_message = ?
-                        WHERE id = ?
-                    """, (
+                    cursor.execute(SQL_UPDATE_HISTORY, (
                         history_data["status"],
                         history_data["download_completed_at"],
                         history_data.get("file_path"),
@@ -624,7 +639,7 @@ class DownloadTab:
         if msg_type == "progress":
             _, percent, msg = message
             self.progress_var.set(percent)
-            self.status_label.config(text=msg, foreground="blue")
+            self.status_label.config(text=msg, foreground=STATUS_COLOR_BLUE)
 
         elif msg_type == "complete":
             _, success, msg = message
@@ -656,12 +671,7 @@ class DownloadTab:
                     if not self.db:
                         return
                     cursor = self.db.connection.cursor()
-                    cursor.execute("""
-                        UPDATE history 
-                        SET status = ?, download_completed_at = ?, 
-                            file_path = ?, file_size = ?, error_message = ?
-                        WHERE id = ?
-                    """, (
+                    cursor.execute(SQL_UPDATE_HISTORY, (
                         history_update["status"],
                         history_update["download_completed_at"],
                         history_update.get("file_path"),
@@ -689,11 +699,11 @@ class DownloadTab:
 
             if success:
                 self.progress_var.set(100)
-                self.status_label.config(text=msg, foreground="green")
+                self.status_label.config(text=msg, foreground=STATUS_COLOR_GREEN)
                 messagebox.showinfo("Sucesso", msg)
             else:
                 self.progress_var.set(0)
-                self.status_label.config(text=msg, foreground="red")
+                self.status_label.config(text=msg, foreground=STATUS_COLOR_RED)
                 messagebox.showerror("Erro", msg)
 
             # Limpa variáveis
