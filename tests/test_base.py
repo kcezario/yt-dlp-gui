@@ -6,32 +6,30 @@ import unittest
 from pathlib import Path
 from typing import Optional
 
+from database.connection import DBConnection
+
 
 class TestBase(unittest.TestCase):
     """
     Classe base para testes com configuração de banco de dados temporário.
     
-    Nota: Esta classe será expandida na Etapa 1 quando database.connection
-    for implementado. Por enquanto, apenas fornece a estrutura básica.
+    Cria um banco de dados SQLite temporário para cada teste e inicializa
+    o schema automaticamente.
     """
 
     def setUp(self) -> None:
         """
         Configura o ambiente de teste.
         Cria um banco de dados temporário para cada teste.
-        
-        Nota: A inicialização do DBConnection será adicionada na Etapa 1.
         """
         # Cria um arquivo temporário para o banco de dados
         self.temp_db = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
         self.temp_db.close()
         self.db_path = self.temp_db.name
         
-        # TODO: Inicializar DBConnection quando database.connection for criado
-        # from database.connection import DBConnection
-        # self.db = DBConnection(self.db_path)
-        # self.db.init_db()
-        self.db = None
+        # Inicializa a conexão com o banco temporário
+        self.db = DBConnection(self.db_path)
+        self.db.init_db()
     
     def tearDown(self) -> None:
         """
@@ -39,9 +37,7 @@ class TestBase(unittest.TestCase):
         Remove o banco de dados temporário.
         """
         if hasattr(self, "db") and self.db:
-            # TODO: Fechar conexão quando DBConnection for implementado
-            # self.db.close()
-            pass
+            self.db.close()
         
         if os.path.exists(self.db_path):
             os.unlink(self.db_path)
