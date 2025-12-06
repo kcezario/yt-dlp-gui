@@ -3,7 +3,10 @@
 import threading
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional
+
+if TYPE_CHECKING:
+    from services.download_manager import DownloadManager
 
 from utils.logger import get_logger
 
@@ -54,10 +57,15 @@ class QueueManager:
         self._paused = False
         self._stop_event = threading.Event()
         self._worker_thread: Optional[threading.Thread] = None
-        self._download_manager = None  # Será injetado
+        self._download_manager: Optional["DownloadManager"] = None  # Será injetado
 
-    def set_download_manager(self, download_manager) -> None:
-        """Define o gerenciador de downloads a ser usado."""
+    def set_download_manager(self, download_manager: "DownloadManager") -> None:
+        """
+        Define o gerenciador de downloads a ser usado.
+        
+        Args:
+            download_manager: Instância do DownloadManager para processar downloads.
+        """
         self._download_manager = download_manager
 
     def add_item(

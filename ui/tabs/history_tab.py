@@ -6,19 +6,24 @@ import tkinter as tk
 from datetime import datetime
 from pathlib import Path
 from tkinter import messagebox, ttk
-from typing import Callable, Optional
+from typing import TYPE_CHECKING, Optional
 
 from database.connection import DBConnection
 from database.constants import SQL_DELETE_HISTORY
-from database.dao import HistoryDAO
+from database.dao import HistoryDAO, VideoDAO
 from config import Config
-from typing import Optional
 from ui.components.video_list import VideoList
+
+if TYPE_CHECKING:
+    from services.queue_manager import QueueManager
 from ui.constants import (
     COLUMNS_HISTORY,
     COLUMN_WIDTHS_HISTORY,
     FONT_TITLE,
     HISTORY_BUTTON_REFRESH,
+    HISTORY_MENU_DELETE,
+    HISTORY_MENU_OPEN_FOLDER,
+    HISTORY_MENU_RETRY,
     HISTORY_TITLE,
     PADDING_DEFAULT,
 )
@@ -35,17 +40,25 @@ class HistoryTab:
     título do vídeo, status, data, etc.
     """
 
-    def __init__(self, parent: ttk.Notebook, db: DBConnection) -> None:
+    def __init__(
+        self, 
+        parent: ttk.Notebook, 
+        db: DBConnection,
+        queue_manager: Optional["QueueManager"] = None
+    ) -> None:
         """
         Inicializa a aba de histórico.
         
         Args:
             parent: Widget pai (Notebook) onde a aba será adicionada.
             db: Instância da conexão com o banco de dados.
+            queue_manager: Gerenciador de fila de downloads (opcional).
         """
         self.frame = ttk.Frame(parent)
         self.db = db
         self.history_dao = HistoryDAO(db)
+        self.video_dao = VideoDAO(db) if db else None
+        self.queue_manager = queue_manager
         
         self._setup_ui()
         self.load_history()
@@ -174,9 +187,6 @@ class HistoryTab:
     def _setup_context_menu(self) -> None:
         """Configura o menu de contexto (botão direito) na Treeview."""
         self.context_menu = tk.Menu(self.frame, tearoff=0)
-        self.context_menu.add_command(label="Abrir Pasta", command=self._open_folder)
-        self.context_menu.add_separator()
-        self.context_menu.add_command(label="Deletar", command=self._delete_item)
         
         # Bind do botão direito
         self.video_list.tree.bind("<Button-3>", self._show_context_menu)  # Windows/Linux
@@ -186,9 +196,34 @@ class HistoryTab:
         """Exibe o menu de contexto na posição do clique."""
         # Seleciona o item clicado
         item = self.video_list.tree.identify_row(event.y)
-        if item:
-            self.video_list.tree.selection_set(item)
-            self.context_menu.post(event.x_root, event.y_root)
+        if not item:
+            return
+        
+        self.video_list.tree.selection_set(item)
+        
+        # Limpa o menu anterior
+        self.context_menu.delete(0, tk.END)
+        
+        # Obtém o item selecionado para verificar status
+        selected_item = self.video_list.get_selected_item()
+        if selected_item:
+            original_data = selected_item.get("_original", {})
+            status = original_data.get("status", "")
+            video_url = original_data.get("video_url")
+            
+            # Adiciona opções base
+            self.context_menu.add_command(label=HISTORY_MENU_OPEN_FOLDER, command=self._open_folder)
+            
+            # Adiciona "Tentar Novamente" apenas para itens que falharam e têm URL
+            if status == "failed" and video_url and self.queue_manager:
+                self.context_menu.add_separator()
+                self.context_menu.add_command(label=HISTORY_MENU_RETRY, command=self._retry_download)
+            
+            self.context_menu.add_separator()
+            self.context_menu.add_command(label=HISTORY_MENU_DELETE, command=self._delete_item)
+        
+        # Exibe o menu
+        self.context_menu.post(event.x_root, event.y_root)
 
     def _open_folder(self) -> None:
         """Abre a pasta do arquivo selecionado."""
@@ -226,6 +261,80 @@ class HistoryTab:
         except Exception as e:
             log.error(f"Erro ao abrir pasta: {e}")
             messagebox.showerror("Erro", f"Não foi possível abrir a pasta:\n{e}")
+
+    def _retry_download(self) -> None:
+        """Tenta novamente o download de um item que falhou."""
+        if not self.queue_manager:
+            messagebox.showerror("Erro", "Gerenciador de fila não disponível.")
+            return
+        
+        item = self.video_list.get_selected_item()
+        if not item:
+            messagebox.showwarning("Aviso", "Nenhum item selecionado.")
+            return
+        
+        original_data = item.get("_original", {})
+        video_url = original_data.get("video_url")
+        video_id = original_data.get("video_id")
+        title = item.get("Título", "Desconhecido")
+        status = original_data.get("status")
+        
+        if status != "failed":
+            messagebox.showinfo("Informação", "Este item não falhou. Apenas itens com falha podem ser tentados novamente.")
+            return
+        
+        if not video_url:
+            messagebox.showerror("Erro", "Não foi possível obter a URL do vídeo para tentar novamente.")
+            return
+        
+        # Tenta obter informações do vídeo do banco de dados
+        video_info = None
+        if video_id and self.video_dao:
+            try:
+                video_info = self.video_dao.get_by_id(video_id)
+            except Exception as e:
+                log.warning(f"Erro ao buscar informações do vídeo: {e}")
+        
+        # Determina o caminho de destino
+        file_path = original_data.get("file_path")
+        if file_path:
+            download_path = str(Path(file_path).parent)
+        else:
+            download_path = Config.DEFAULT_DOWNLOAD_PATH
+        
+        # Tenta determinar o formato baseado na extensão do arquivo ou usa MP4 como padrão
+        mode = "mp4"  # Padrão
+        if file_path:
+            ext = Path(file_path).suffix.lower()
+            if ext == ".mp3":
+                mode = "mp3"
+            elif ext in [".mp4", ".m4a", ".webm"]:
+                mode = "mp4"
+        
+        # Adiciona à fila
+        try:
+            item_id = self.queue_manager.add_item(
+                url=video_url,
+                title=title,
+                path=download_path,
+                mode=mode,
+                video_id=video_id,
+            )
+            
+            log.info(f"Download reenfileirado: {title} ({item_id[:8]})")
+            messagebox.showinfo(
+                "Download Reenfileirado",
+                f"O download foi adicionado à fila novamente.\n\n"
+                f"Título: {title}\n"
+                f"Formato: {mode.upper()}\n"
+                f"Destino: {download_path}"
+            )
+            
+            # Atualiza a lista de histórico
+            self.refresh()
+        except Exception as e:
+            log.error(f"Erro ao reenfileirar download: {e}")
+            messagebox.showerror("Erro", f"Não foi possível reenfileirar o download:\n{e}")
 
     def _delete_item(self) -> None:
         """Deleta o item selecionado do histórico."""

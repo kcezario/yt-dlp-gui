@@ -50,7 +50,7 @@ def main() -> None:
     refresh_queue = None
     
     if db:
-        history_tab = HistoryTab(app.notebook, db)
+        history_tab = HistoryTab(app.notebook, db, queue_manager=queue_manager)
         refresh_history = history_tab.refresh
     
     # Cria aba de fila
