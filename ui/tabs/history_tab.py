@@ -1,8 +1,11 @@
 """Aba de histórico de downloads."""
 
+import os
+import subprocess
 import tkinter as tk
 from datetime import datetime
-from tkinter import ttk
+from pathlib import Path
+from tkinter import messagebox, ttk
 from typing import Callable, Optional
 
 from database.connection import DBConnection
@@ -76,6 +79,9 @@ class HistoryTab:
             column_widths=column_widths,
             on_select=self._on_item_select
         )
+        
+        # Adiciona menu de contexto
+        self._setup_context_menu()
 
     def _format_status(self, status: str) -> str:
         """
@@ -160,6 +166,102 @@ class HistoryTab:
             log.info(f"Histórico carregado: {len(formatted_data)} registros")
         except Exception as e:
             log.error(f"Erro ao carregar histórico: {e}")
+
+    def _setup_context_menu(self) -> None:
+        """Configura o menu de contexto (botão direito) na Treeview."""
+        self.context_menu = tk.Menu(self.frame, tearoff=0)
+        self.context_menu.add_command(label="Abrir Pasta", command=self._open_folder)
+        self.context_menu.add_separator()
+        self.context_menu.add_command(label="Deletar", command=self._delete_item)
+        
+        # Bind do botão direito
+        self.video_list.tree.bind("<Button-3>", self._show_context_menu)  # Windows/Linux
+        self.video_list.tree.bind("<Button-2>", self._show_context_menu)  # macOS
+
+    def _show_context_menu(self, event: tk.Event) -> None:
+        """Exibe o menu de contexto na posição do clique."""
+        # Seleciona o item clicado
+        item = self.video_list.tree.identify_row(event.y)
+        if item:
+            self.video_list.tree.selection_set(item)
+            self.context_menu.post(event.x_root, event.y_root)
+
+    def _open_folder(self) -> None:
+        """Abre a pasta do arquivo selecionado."""
+        item = self.video_list.get_selected_item()
+        if not item:
+            messagebox.showwarning("Aviso", "Nenhum item selecionado.")
+            return
+        
+        original_data = item.get("_original", {})
+        file_path = original_data.get("file_path")
+        
+        if not file_path:
+            messagebox.showinfo("Informação", "Este item não possui arquivo associado.")
+            return
+        
+        try:
+            # Converte para Path e obtém o diretório
+            path = Path(file_path)
+            if path.exists():
+                folder_path = path.parent
+            else:
+                # Se o arquivo não existe, tenta usar o caminho do diretório
+                folder_path = Path(file_path).parent
+                if not folder_path.exists():
+                    messagebox.showerror("Erro", f"Pasta não encontrada:\n{folder_path}")
+                    return
+            
+            # Abre a pasta no explorador de arquivos do sistema
+            if os.name == "nt":  # Windows
+                os.startfile(str(folder_path))
+            elif os.name == "posix":  # macOS e Linux
+                subprocess.run(["open" if os.uname().sysname == "Darwin" else "xdg-open", str(folder_path)])
+            else:
+                messagebox.showinfo("Informação", f"Pasta: {folder_path}")
+        except Exception as e:
+            log.error(f"Erro ao abrir pasta: {e}")
+            messagebox.showerror("Erro", f"Não foi possível abrir a pasta:\n{e}")
+
+    def _delete_item(self) -> None:
+        """Deleta o item selecionado do histórico."""
+        item = self.video_list.get_selected_item()
+        if not item:
+            messagebox.showwarning("Aviso", "Nenhum item selecionado.")
+            return
+        
+        original_data = item.get("_original", {})
+        history_id = original_data.get("id")
+        title = item.get("Título", "item desconhecido")
+        
+        if not history_id:
+            messagebox.showerror("Erro", "Não foi possível identificar o item para deletar.")
+            return
+        
+        # Confirmação
+        response = messagebox.askyesno(
+            "Confirmar Exclusão",
+            f"Deseja realmente deletar este item do histórico?\n\n"
+            f"Título: {title}\n\n"
+            f"Nota: O arquivo físico não será deletado, apenas o registro do histórico."
+        )
+        
+        if not response:
+            return
+        
+        try:
+            cursor = self.db.connection.cursor()
+            cursor.execute("DELETE FROM history WHERE id = ?", (history_id,))
+            self.db.connection.commit()
+            
+            log.info(f"Item {history_id} deletado do histórico")
+            messagebox.showinfo("Sucesso", "Item deletado do histórico com sucesso.")
+            
+            # Atualiza a lista
+            self.refresh()
+        except Exception as e:
+            log.error(f"Erro ao deletar item do histórico: {e}")
+            messagebox.showerror("Erro", f"Não foi possível deletar o item:\n{e}")
 
     def _on_item_select(self, item: dict) -> None:
         """

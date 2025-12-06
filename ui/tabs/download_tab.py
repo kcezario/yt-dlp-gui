@@ -14,6 +14,7 @@ from config import Config
 from database.connection import DBConnection
 from database.dao import HistoryDAO, VideoDAO
 from services.download_manager import DownloadManager
+from services.validation import validate_download_url
 from utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -194,9 +195,10 @@ class DownloadTab:
         path = self.path_var.get().strip()
         mode = self.format_var.get()
 
-        # Validações
-        if not url:
-            messagebox.showerror("Erro", "Por favor, insira uma URL válida.")
+        # Validação de URL
+        is_valid, error_msg = validate_download_url(url)
+        if not is_valid:
+            messagebox.showerror("URL Inválida", error_msg)
             return
 
         if not path:
@@ -207,6 +209,17 @@ class DownloadTab:
         if self.is_downloading:
             messagebox.showwarning("Aviso", "Já existe um download em andamento.")
             return
+
+        # Verifica FFmpeg para downloads de áudio
+        if mode.lower() == "mp3" and not self.download_manager._ffmpeg_path:
+            response = messagebox.askyesno(
+                "FFmpeg Não Encontrado",
+                "FFmpeg não foi encontrado no sistema.\n\n"
+                "FFmpeg é necessário para downloads de áudio (MP3).\n\n"
+                "Deseja continuar mesmo assim? (O download pode falhar)"
+            )
+            if not response:
+                return
 
         # Valida se a pasta existe ou pode ser criada
         try:
@@ -220,7 +233,17 @@ class DownloadTab:
         video_info = self._extract_video_info(url)
         
         if not video_info:
-            messagebox.showerror("Erro", "Não foi possível extrair informações do vídeo. Verifique a URL.")
+            # Verifica se é erro de conexão
+            error_msg = (
+                "Não foi possível extrair informações do vídeo.\n\n"
+                "Possíveis causas:\n"
+                "• Sem conexão com a internet\n"
+                "• URL inválida ou vídeo não disponível\n"
+                "• YouTube bloqueou o acesso\n\n"
+                "Verifique sua conexão e tente novamente."
+            )
+            messagebox.showerror("Erro ao Extrair Informações", error_msg)
+            self.status_label.config(text="Erro ao extrair informações", foreground="red")
             return
 
         self.current_video_info = video_info

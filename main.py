@@ -5,6 +5,7 @@ from database.connection import DBConnection
 from ui.root import MainWindow
 from ui.tabs.download_tab import DownloadTab
 from ui.tabs.history_tab import HistoryTab
+from ui.tabs.settings_tab import SettingsTab
 from utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -45,6 +46,10 @@ def main() -> None:
     # Adiciona aba de histórico depois (será a segunda aba)
     if db:
         app.add_tab("Histórico", history_tab.frame)
+
+    # Adiciona aba de configurações
+    settings_tab = SettingsTab(app.notebook)
+    app.add_tab("Configurações", settings_tab.frame)
 
     # Seleciona a aba "Download" como inicial
     app.select_tab("Download")
