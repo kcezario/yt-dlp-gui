@@ -77,6 +77,16 @@ class DownloadManager:
             "quiet": True,
             "no_warnings": True,
             "progress_hooks": [self._create_progress_hook(on_progress)] if on_progress else [],
+            # Opções para contornar bloqueios do YouTube
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["android", "web"],  # Tenta diferentes clientes
+                }
+            },
+            # Headers para parecer um navegador real
+            "http_headers": {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            },
         }
 
         # Configurações específicas por modo
@@ -212,7 +222,32 @@ class DownloadManager:
 
             except Exception as e:
                 success = False
-                message = f"Erro no download: {str(e)}"
+                error_str = str(e)
+                
+                # Mensagens mais amigáveis para erros comuns
+                if "403" in error_str or "Forbidden" in error_str:
+                    message = (
+                        "Erro: YouTube bloqueou o download (403 Forbidden).\n\n"
+                        "Possíveis soluções:\n"
+                        "• Atualize o yt-dlp: pip install --upgrade yt-dlp\n"
+                        "• Tente novamente em alguns minutos\n"
+                        "• Alguns vídeos podem ter restrições de download"
+                    )
+                elif "Video unavailable" in error_str or "unavailable" in error_str:
+                    message = "Erro: Vídeo não disponível ou foi removido."
+                elif "Private video" in error_str:
+                    message = "Erro: Este vídeo é privado e não pode ser baixado."
+                elif "Sign in to confirm your age" in error_str:
+                    message = "Erro: Vídeo com restrição de idade. Não é possível baixar."
+                elif "FFmpeg" in error_str or "ffmpeg" in error_str:
+                    message = (
+                        "Erro: FFmpeg não encontrado ou não configurado corretamente.\n\n"
+                        "Para downloads de áudio (MP3), o FFmpeg é necessário.\n"
+                        "Baixe em: https://ffmpeg.org/download.html"
+                    )
+                else:
+                    message = f"Erro no download: {error_str}"
+                
                 log.error(f"Erro ao baixar {url}: {e}", exc_info=True)
             finally:
                 # Remove da lista de downloads ativos
