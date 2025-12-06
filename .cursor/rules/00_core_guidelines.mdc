@@ -1,0 +1,82 @@
+---
+description: Diretrizes centrais para o projeto YT-Downloader Pro. Define a arquitetura MVC, stack tecnológica e boas práticas de desenvolvimento Desktop.
+alwaysApply: true
+---
+# Diretrizes do Projeto: YT-Downloader Pro
+
+## 1. Persona e Estilo de Código
+- Você atua como um Engenheiro de Software Sênior especializado em desenvolvimento Desktop Python e arquitetura de software.
+- O código deve ser escrito em **Python 3.12+**.
+- **Tipagem Estrita:** Utilize Type Hints (`typing`) em todas as assinaturas de métodos, funções e atributos de classe.
+- **Idioma:** 
+  - Código (Classes, variáveis, funções): **Inglês**.
+  - Documentação (Docstrings, Comentários, Commits): **Português do Brasil**.
+- **Design Patterns:** Siga rigorosamente o padrão **MVC (Model-View-Controller)**. A lógica de negócio (download, banco) NÃO deve estar misturada com a lógica de interface (Tkinter widgets).
+- Use Docstrings no formato Google Style.
+
+## 2. Stack de Tecnologia Principal
+- **GUI (Interface):** `tkinter` e `tkinter.ttk` (Standard Library). 
+  - **Restrição:** NÃO utilizar wrappers de terceiros como *CustomTkinter* ou *ttkbootstrap*. Use o visual nativo do sistema operacional.
+- **Engine de Download:** `yt_dlp`.
+- **Banco de Dados:** `sqlite3` (Standard Library).
+- **Concorrência:** `threading` (para não bloquear a GUI) e `queue` (para comunicação thread-safe).
+- **Dependência Externa:** `ffmpeg` (deve ser tratado como dependência de sistema ou binário local).
+
+## 3. Arquitetura do Projeto
+A estrutura de diretórios deve seguir este padrão MVC:
+
+```text
+/
+├── main.py                   # Ponto de entrada (Bootstrap da GUI e DB)
+├── config.py                 # Configurações globais e constantes
+├── requirements.txt          # Lista de dependências
+├── database/                 # MODELO DE DADOS
+│   ├── __init__.py
+│   ├── connection.py         # Singleton de conexão SQLite
+│   ├── schema.sql            # Script DDL (Tabelas: videos, playlists, history)
+│   └── dao.py                # Data Access Objects (CRUD)
+├── services/                 # LÓGICA DE NEGÓCIO (CONTROLLER BACKEND)
+│   ├── __init__.py
+│   ├── download_manager.py   # Wrapper do yt_dlp + Gerenciamento de Threads
+│   └── utils.py              # Validadores de URL, formatadores de string
+└── ui/                       # INTERFACE GRÁFICA (VIEW)
+    ├── __init__.py
+    ├── root.py               # Janela Principal (MainWindow)
+    ├── assets/               # Ícones e imagens
+    ├── components/           # Widgets reutilizáveis (Barra de progresso, Treeview)
+    └── tabs/                 # Abas do Notebook
+        ├── download_tab.py   # Input e ações
+        ├── history_tab.py    # Visualização do Banco
+        └── settings_tab.py   # Configurações
+```
+
+## 4. Metodologia de Desenvolvimento
+- **Desenvolvimento Incremental:** Siga estritamente o arquivo `task_list.md`.
+- **Foco na Tarefa:** Implemente apenas o solicitado na etapa atual. Não gere código para funcionalidades futuras ("YAGNI").
+- **Threading Seguro:** Nunca manipule widgets do Tkinter diretamente de uma *Worker Thread*. Use `root.after` ou filas (`queue.Queue`) para passar atualizações da thread de download para a thread principal da GUI.
+- **Fonte da Verdade:** O arquivo `task_list.md` dita a ordem de execução.
+- **Checklist:**
+  - Cumprir a sub-tarefa.
+  - Verificar se o código roda sem erros.
+  - Marcar o check-box em `task_list.md` (de `[ ]` para `[X]`) após conclusão.
+
+## 5. Gerenciamento de Dependências e Ambiente
+- **Ambiente Virtual:** O uso de VENV é obrigatório.
+- **Instalação:** 
+  - Para instalar pacotes: `pip install <nome_pacote>`.
+  - **IMEDIATAMENTE APÓS INSTALAR:** Execute `pip freeze > requirements.txt` para manter as dependências atualizadas.
+- **Comandos de Terminal:** Sempre assuma que o terminal está na raiz do projeto.
+- **Restrição Absoluta:** NUNCA instale pacotes no Python global do sistema.
+
+## 6. Padrões de Commits
+- Utilize "Conventional Commits" em Português:
+  - `feat(db): cria tabelas de playlist e video`
+  - `fix(gui): corrige travamento da barra de progresso`
+  - `refactor(core): otimiza classe download_manager`
+  - `docs(readme): adiciona instruções de instalação`
+
+## 7. Instruções de Execução
+Sempre que for necessário rodar o projeto ou instalar algo, lembre-se das instruções do usuário:
+1. **Ativar VENV:** `.venv/Scripts/activate` (Windows) ou `source .venv/bin/activate` (Linux/Mac).
+2. **Atualizar Deps:** `pip freeze > requirements.txt`.
+3. **Executar:** `python main.py`.
