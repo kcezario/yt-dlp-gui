@@ -6,7 +6,7 @@ import tkinter as tk
 from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
-from typing import Callable, Optional
+from typing import Callable, List, Optional
 
 import yt_dlp
 
@@ -14,6 +14,7 @@ from config import Config
 from database.connection import DBConnection
 from database.dao import HistoryDAO, VideoDAO
 from services.download_manager import DownloadManager
+from services.queue_manager import QueueManager
 from services.validation import validate_download_url
 from utils.logger import get_logger
 
@@ -31,6 +32,8 @@ class DownloadTab:
         parent: ttk.Notebook,
         db: Optional[DBConnection] = None,
         history_tab_ref: Optional[Callable[[], None]] = None,
+        queue_manager: Optional[QueueManager] = None,
+        queue_tab_ref: Optional[Callable[[], None]] = None,
     ) -> None:
         """
         Inicializa a aba de download.
@@ -39,11 +42,17 @@ class DownloadTab:
             parent: Widget pai (Notebook) onde a aba será adicionada.
             db: Instância da conexão com o banco de dados (opcional).
             history_tab_ref: Função para atualizar a aba de histórico (opcional).
+            queue_manager: Gerenciador de fila de downloads (opcional).
+            queue_tab_ref: Função para atualizar a aba de fila (opcional).
         """
         self.frame = ttk.Frame(parent)
         self.download_manager = DownloadManager()
+        self.queue_manager = queue_manager
+        if self.queue_manager:
+            self.queue_manager.set_download_manager(self.download_manager)
         self.db = db
         self.history_tab_ref = history_tab_ref
+        self.queue_tab_ref = queue_tab_ref
         
         # DAOs
         self.history_dao = HistoryDAO(db) if db else None
@@ -74,8 +83,38 @@ class DownloadTab:
         )
         title_label.pack(pady=(0, 20))
 
+        # Frame para tipo de download
+        type_frame = ttk.LabelFrame(main_container, text="Tipo de Download", padding="10")
+        type_frame.pack(fill=tk.X, pady=(0, 10))
+
+        self.download_type_var = tk.StringVar(value="video")
+        
+        video_radio = ttk.Radiobutton(
+            type_frame,
+            text="Vídeo Único",
+            variable=self.download_type_var,
+            value="video"
+        )
+        video_radio.pack(side=tk.LEFT, padx=(0, 20))
+
+        playlist_radio = ttk.Radiobutton(
+            type_frame,
+            text="Playlist",
+            variable=self.download_type_var,
+            value="playlist"
+        )
+        playlist_radio.pack(side=tk.LEFT, padx=(0, 20))
+
+        channel_radio = ttk.Radiobutton(
+            type_frame,
+            text="Canal",
+            variable=self.download_type_var,
+            value="channel"
+        )
+        channel_radio.pack(side=tk.LEFT)
+
         # Frame para URL
-        url_frame = ttk.LabelFrame(main_container, text="URL do Vídeo", padding="10")
+        url_frame = ttk.LabelFrame(main_container, text="URL", padding="10")
         url_frame.pack(fill=tk.X, pady=(0, 10))
 
         self.url_entry = ttk.Entry(url_frame, width=60)
@@ -189,11 +228,50 @@ class DownloadTab:
             log.error(f"Erro ao extrair informações do vídeo: {e}")
             return None
 
+    def _extract_playlist_videos(self, url: str) -> List[dict]:
+        """
+        Extrai lista de vídeos de uma playlist ou canal.
+        
+        Args:
+            url: URL da playlist ou canal.
+            
+        Returns:
+            Lista de dicionários com informações dos vídeos.
+        """
+        try:
+            ydl_opts = {
+                "quiet": True,
+                "no_warnings": True,
+                "extract_flat": True,  # Extrai apenas metadados, não baixa
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                
+                videos = []
+                entries = info.get("entries", [])
+                
+                for entry in entries:
+                    if entry:
+                        video_url = f"https://www.youtube.com/watch?v={entry.get('id', '')}"
+                        videos.append({
+                            "id": entry.get("id", ""),
+                            "title": entry.get("title", "Desconhecido"),
+                            "url": video_url,
+                            "duration": entry.get("duration"),
+                            "channel": entry.get("uploader") or entry.get("channel", ""),
+                        })
+                
+                return videos
+        except Exception as e:
+            log.error(f"Erro ao extrair vídeos da playlist: {e}")
+            return []
+
     def _start_download(self) -> None:
-        """Inicia o download do vídeo."""
+        """Inicia o download do vídeo ou playlist."""
         url = self.url_entry.get().strip()
         path = self.path_var.get().strip()
         mode = self.format_var.get()
+        download_type = self.download_type_var.get()
 
         # Validação de URL
         is_valid, error_msg = validate_download_url(url)
@@ -203,11 +281,6 @@ class DownloadTab:
 
         if not path:
             messagebox.showerror("Erro", "Por favor, selecione uma pasta de destino.")
-            return
-
-        # Verifica se já está baixando
-        if self.is_downloading:
-            messagebox.showwarning("Aviso", "Já existe um download em andamento.")
             return
 
         # Verifica FFmpeg para downloads de áudio
@@ -228,12 +301,19 @@ class DownloadTab:
             messagebox.showerror("Erro", f"Não foi possível criar/acessar a pasta:\n{e}")
             return
 
+        # Processa baseado no tipo
+        if download_type == "video":
+            self._download_single_video(url, path, mode)
+        elif download_type in ("playlist", "channel"):
+            self._download_playlist(url, path, mode)
+
+    def _download_single_video(self, url: str, path: str, mode: str) -> None:
+        """Inicia download de um vídeo único."""
         # Extrai informações do vídeo
         self.status_label.config(text="Extraindo informações do vídeo...", foreground="blue")
         video_info = self._extract_video_info(url)
         
         if not video_info:
-            # Verifica se é erro de conexão
             error_msg = (
                 "Não foi possível extrair informações do vídeo.\n\n"
                 "Possíveis causas:\n"
@@ -284,6 +364,205 @@ class DownloadTab:
             on_progress=self._on_progress_callback,
             on_complete=self._on_complete_callback
         )
+
+    def _download_playlist(self, url: str, path: str, mode: str) -> None:
+        """Extrai e adiciona vídeos de playlist/canal à fila."""
+        if not self.queue_manager:
+            messagebox.showerror(
+                "Erro",
+                "Gerenciador de fila não disponível.\n"
+                "Downloads de playlist requerem o sistema de fila."
+            )
+            return
+
+        self.status_label.config(text="Extraindo lista de vídeos...", foreground="blue")
+        videos = self._extract_playlist_videos(url)
+        
+        if not videos:
+            error_msg = (
+                "Não foi possível extrair vídeos da playlist/canal.\n\n"
+                "Possíveis causas:\n"
+                "• Sem conexão com a internet\n"
+                "• URL inválida ou playlist/canal não disponível\n"
+                "• YouTube bloqueou o acesso\n\n"
+                "Verifique sua conexão e tente novamente."
+            )
+            messagebox.showerror("Erro ao Extrair Playlist", error_msg)
+            self.status_label.config(text="Erro ao extrair playlist", foreground="red")
+            return
+
+        # Adiciona vídeos à fila
+        added_count = 0
+        for video in videos:
+            video_id = video.get("id")
+            
+            # Cria registro de histórico antes de adicionar à fila
+            if self.history_dao and video_id:
+                try:
+                    # Salva vídeo no banco
+                    if self.video_dao:
+                        video_info = {
+                            "id": video_id,
+                            "title": video["title"],
+                            "url": video["url"],
+                            "duration": video.get("duration"),
+                            "channel": video.get("channel", ""),
+                        }
+                        self.video_dao.upsert(video_info)
+                    
+                    # Cria registro de histórico
+                    history_data = {
+                        "video_id": video_id,
+                        "status": "downloading",
+                        "download_started_at": datetime.now().isoformat(),
+                    }
+                    self.history_dao.add_history(history_data)
+                except Exception as e:
+                    log.warning(f"Erro ao criar histórico para vídeo {video_id}: {e}")
+            
+            item_id = self.queue_manager.add_item(
+                url=video["url"],
+                title=video["title"],
+                path=path,
+                mode=mode,
+                video_id=video_id,
+                on_progress=self._on_queue_progress,
+                on_complete=self._on_queue_complete,
+            )
+            added_count += 1
+
+        messagebox.showinfo(
+            "Playlist Adicionada",
+            f"{added_count} vídeo(s) adicionado(s) à fila de downloads.\n\n"
+            "Acompanhe o progresso na aba 'Fila de Downloads'."
+        )
+        
+        self.status_label.config(
+            text=f"{added_count} vídeo(s) na fila",
+            foreground="green"
+        )
+        
+        # Atualiza aba de fila
+        if self.queue_tab_ref:
+            try:
+                self.queue_tab_ref()
+            except Exception as e:
+                log.warning(f"Erro ao atualizar aba de fila: {e}")
+
+    def _on_queue_progress(self, item_id: str, percent: float, msg: str) -> None:
+        """Callback de progresso para itens da fila."""
+        if self.queue_tab_ref:
+            try:
+                self.queue_tab_ref()
+            except Exception:
+                pass
+
+    def _on_queue_complete(self, item_id: str, success: bool, msg: str, file_path: Optional[str]) -> None:
+        """
+        Callback de conclusão para itens da fila.
+        Salva no banco de dados e atualiza as abas.
+        """
+        # Obtém o item da fila
+        if not self.queue_manager:
+            return
+        
+        item = self.queue_manager.get_item(item_id)
+        if not item:
+            return
+
+        # Salva vídeo no banco de dados
+        if self.video_dao and item.video_id:
+            try:
+                # Extrai informações do vídeo se necessário
+                video_info = {
+                    "id": item.video_id,
+                    "title": item.title,
+                    "url": item.url,
+                    "file_path": file_path if success else None,
+                }
+                
+                # Tenta obter mais informações se possível
+                try:
+                    full_info = self._extract_video_info(item.url)
+                    if full_info:
+                        video_info.update(full_info)
+                        if file_path and success:
+                            video_info["file_path"] = file_path
+                except Exception:
+                    pass  # Usa informações básicas se não conseguir extrair
+                
+                self.video_dao.upsert(video_info)
+            except Exception as e:
+                log.warning(f"Erro ao salvar vídeo no banco: {e}")
+
+        # Cria/atualiza registro de histórico
+        if self.history_dao and self.db and item.video_id:
+            try:
+                # Busca se já existe histórico para este vídeo
+                cursor = self.db.connection.cursor()
+                cursor.execute(
+                    "SELECT id FROM history WHERE video_id = ? ORDER BY created_at DESC LIMIT 1",
+                    (item.video_id,)
+                )
+                existing = cursor.fetchone()
+                log.debug(f"Buscando histórico para vídeo {item.video_id}: {'encontrado' if existing else 'não encontrado'}")
+                
+                history_data = {
+                    "video_id": item.video_id,
+                    "status": "completed" if success else "failed",
+                    "download_completed_at": datetime.now().isoformat(),
+                    "error_message": None if success else msg,
+                }
+                
+                if file_path and success:
+                    history_data["file_path"] = file_path
+                    try:
+                        if os.path.exists(file_path):
+                            history_data["file_size"] = os.path.getsize(file_path)
+                    except Exception:
+                        pass
+
+                if existing:
+                    # Atualiza registro existente
+                    history_id = existing["id"]
+                    cursor.execute("""
+                        UPDATE history 
+                        SET status = ?, download_completed_at = ?, 
+                            file_path = ?, file_size = ?, error_message = ?
+                        WHERE id = ?
+                    """, (
+                        history_data["status"],
+                        history_data["download_completed_at"],
+                        history_data.get("file_path"),
+                        history_data.get("file_size"),
+                        history_data.get("error_message"),
+                        history_id,
+                    ))
+                    log.info(f"Histórico atualizado para vídeo {item.video_id} (status: {history_data['status']})")
+                else:
+                    # Cria novo registro se não existir
+                    history_data["download_started_at"] = datetime.now().isoformat()
+                    self.history_dao.add_history(history_data)
+                    log.info(f"Novo histórico criado para vídeo {item.video_id} (status: {history_data['status']})")
+                
+                self.db.connection.commit()
+            except Exception as e:
+                log.error(f"Erro ao salvar histórico para vídeo {item.video_id if item.video_id else 'desconhecido'}: {e}", exc_info=True)
+        elif not item.video_id:
+            log.warning(f"Item {item_id[:8]} não possui video_id, histórico não será salvo")
+
+        # Atualiza abas
+        if self.queue_tab_ref:
+            try:
+                self.queue_tab_ref()
+            except Exception:
+                pass
+        
+        if self.history_tab_ref:
+            try:
+                self.history_tab_ref()
+            except Exception:
+                pass
 
     def _on_progress_callback(self, percent: float, msg: str) -> None:
         """

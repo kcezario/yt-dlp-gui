@@ -2,9 +2,11 @@
 
 from config import Config
 from database.connection import DBConnection
+from services.queue_manager import QueueManager
 from ui.root import MainWindow
 from ui.tabs.download_tab import DownloadTab
 from ui.tabs.history_tab import HistoryTab
+from ui.tabs.queue_tab import QueueTab
 from ui.tabs.settings_tab import SettingsTab
 from utils.logger import get_logger
 
@@ -31,19 +33,37 @@ def main() -> None:
     # Cria janela principal
     app = MainWindow()
 
+    # Cria gerenciador de fila
+    queue_manager = QueueManager()
+
     # Adiciona aba de download primeiro (será a primeira aba à esquerda)
     # Passa referência para atualizar histórico após downloads
     history_tab = None
     refresh_history = None
+    queue_tab = None
+    refresh_queue = None
     
     if db:
         history_tab = HistoryTab(app.notebook, db)
         refresh_history = history_tab.refresh
     
-    download_tab = DownloadTab(app.notebook, db=db, history_tab_ref=refresh_history)
+    # Cria aba de fila
+    queue_tab = QueueTab(app.notebook, queue_manager)
+    refresh_queue = queue_tab.refresh
+    
+    download_tab = DownloadTab(
+        app.notebook,
+        db=db,
+        history_tab_ref=refresh_history,
+        queue_manager=queue_manager,
+        queue_tab_ref=refresh_queue
+    )
     app.add_tab("Download", download_tab.frame)
 
-    # Adiciona aba de histórico depois (será a segunda aba)
+    # Adiciona aba de fila
+    app.add_tab("Fila de Downloads", queue_tab.frame)
+
+    # Adiciona aba de histórico depois
     if db:
         app.add_tab("Histórico", history_tab.frame)
 
