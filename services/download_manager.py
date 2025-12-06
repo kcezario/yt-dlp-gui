@@ -256,7 +256,7 @@ class DownloadManager:
                 
                 # Chama callback de conclusão
                 if on_complete:
-                    on_complete(success, message)
+                    on_complete(success, message, file_path if success else None)
 
         # Cria e inicia a thread
         thread = threading.Thread(target=download_worker, daemon=True)

@@ -50,6 +50,22 @@ class MainWindow:
         self.tabs[name] = frame
         log.debug(f"Aba '{name}' adicionada")
 
+    def select_tab(self, name: str) -> None:
+        """
+        Seleciona uma aba pelo nome.
+        
+        Args:
+            name: Nome da aba a ser selecionada.
+        """
+        if name in self.tabs:
+            frame = self.tabs[name]
+            # Encontra o índice da aba
+            for i in range(self.notebook.index("end")):
+                if self.notebook.tab(i, "text") == name:
+                    self.notebook.select(i)
+                    log.debug(f"Aba '{name}' selecionada")
+                    break
+
     def run(self) -> None:
         """Inicia o loop principal da aplicação."""
         log.info("Iniciando loop principal da aplicação")

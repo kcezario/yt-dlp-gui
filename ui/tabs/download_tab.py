@@ -1,12 +1,18 @@
 """Aba de download da interface gráfica."""
 
+import os
 import queue
 import tkinter as tk
+from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import Callable, Optional
 
+import yt_dlp
+
 from config import Config
+from database.connection import DBConnection
+from database.dao import HistoryDAO, VideoDAO
 from services.download_manager import DownloadManager
 from utils.logger import get_logger
 
@@ -19,21 +25,36 @@ class DownloadTab:
     escolher formato e iniciar downloads.
     """
 
-    def __init__(self, parent: ttk.Notebook) -> None:
+    def __init__(
+        self,
+        parent: ttk.Notebook,
+        db: Optional[DBConnection] = None,
+        history_tab_ref: Optional[Callable[[], None]] = None,
+    ) -> None:
         """
         Inicializa a aba de download.
         
         Args:
             parent: Widget pai (Notebook) onde a aba será adicionada.
+            db: Instância da conexão com o banco de dados (opcional).
+            history_tab_ref: Função para atualizar a aba de histórico (opcional).
         """
         self.frame = ttk.Frame(parent)
         self.download_manager = DownloadManager()
+        self.db = db
+        self.history_tab_ref = history_tab_ref
+        
+        # DAOs
+        self.history_dao = HistoryDAO(db) if db else None
+        self.video_dao = VideoDAO(db) if db else None
         
         # Fila para comunicação thread-safe entre download thread e GUI
         self.message_queue: queue.Queue = queue.Queue()
         
         # Variáveis de controle
         self.is_downloading = False
+        self.current_video_info: Optional[dict] = None
+        self.current_history_id: Optional[int] = None
         
         self._setup_ui()
         self._start_queue_processor()
@@ -139,6 +160,34 @@ class DownloadTab:
         if folder:
             self.path_var.set(folder)
 
+    def _extract_video_info(self, url: str) -> Optional[dict]:
+        """
+        Extrai informações do vídeo antes de iniciar o download.
+        
+        Args:
+            url: URL do vídeo.
+            
+        Returns:
+            Dicionário com informações do vídeo ou None em caso de erro.
+        """
+        try:
+            ydl_opts = {"quiet": True, "no_warnings": True}
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                return {
+                    "id": info.get("id", ""),
+                    "title": info.get("title", "Desconhecido"),
+                    "duration": info.get("duration"),
+                    "channel": info.get("uploader") or info.get("channel", ""),
+                    "upload_date": info.get("upload_date", ""),
+                    "url": url,
+                    "thumbnail_url": info.get("thumbnail"),
+                    "description": info.get("description", ""),
+                }
+        except Exception as e:
+            log.error(f"Erro ao extrair informações do vídeo: {e}")
+            return None
+
     def _start_download(self) -> None:
         """Inicia o download do vídeo."""
         url = self.url_entry.get().strip()
@@ -165,6 +214,35 @@ class DownloadTab:
         except Exception as e:
             messagebox.showerror("Erro", f"Não foi possível criar/acessar a pasta:\n{e}")
             return
+
+        # Extrai informações do vídeo
+        self.status_label.config(text="Extraindo informações do vídeo...", foreground="blue")
+        video_info = self._extract_video_info(url)
+        
+        if not video_info:
+            messagebox.showerror("Erro", "Não foi possível extrair informações do vídeo. Verifique a URL.")
+            return
+
+        self.current_video_info = video_info
+
+        # Salva vídeo no banco de dados
+        if self.video_dao:
+            try:
+                self.video_dao.upsert(video_info)
+            except Exception as e:
+                log.warning(f"Erro ao salvar vídeo no banco: {e}")
+
+        # Cria registro de histórico
+        if self.history_dao:
+            try:
+                history_data = {
+                    "video_id": video_info.get("id"),
+                    "status": "downloading",
+                    "download_started_at": datetime.now().isoformat(),
+                }
+                self.current_history_id = self.history_dao.add_history(history_data)
+            except Exception as e:
+                log.warning(f"Erro ao criar registro de histórico: {e}")
 
         # Atualiza UI
         self.is_downloading = True
@@ -195,7 +273,7 @@ class DownloadTab:
         """
         self.message_queue.put(("progress", percent, msg))
 
-    def _on_complete_callback(self, success: bool, msg: str) -> None:
+    def _on_complete_callback(self, success: bool, msg: str, file_path: Optional[str] = None) -> None:
         """
         Callback de conclusão chamado pela thread de download.
         Envia mensagem para a fila para processamento na thread principal.
@@ -203,8 +281,9 @@ class DownloadTab:
         Args:
             success: True se o download foi bem-sucedido.
             msg: Mensagem de status.
+            file_path: Caminho do arquivo baixado (opcional).
         """
-        self.message_queue.put(("complete", success, msg))
+        self.message_queue.put(("complete", success, msg, file_path))
 
     def _start_queue_processor(self) -> None:
         """
@@ -247,9 +326,64 @@ class DownloadTab:
 
         elif msg_type == "complete":
             _, success, msg = message
+            file_path = message[3] if len(message) > 3 else None
+            
             self.is_downloading = False
             self.download_button.config(state=tk.NORMAL)
             self.url_entry.config(state=tk.NORMAL)
+
+            # Atualiza histórico no banco de dados
+            if self.history_dao and self.current_history_id:
+                try:
+                    history_update = {
+                        "status": "completed" if success else "failed",
+                        "download_completed_at": datetime.now().isoformat(),
+                        "error_message": None if success else msg,
+                    }
+                    
+                    if file_path and success:
+                        history_update["file_path"] = file_path
+                        # Tenta obter tamanho do arquivo
+                        try:
+                            if os.path.exists(file_path):
+                                history_update["file_size"] = os.path.getsize(file_path)
+                        except Exception:
+                            pass
+                    
+                    # Atualiza registro de histórico
+                    if not self.db:
+                        return
+                    cursor = self.db.connection.cursor()
+                    cursor.execute("""
+                        UPDATE history 
+                        SET status = ?, download_completed_at = ?, 
+                            file_path = ?, file_size = ?, error_message = ?
+                        WHERE id = ?
+                    """, (
+                        history_update["status"],
+                        history_update["download_completed_at"],
+                        history_update.get("file_path"),
+                        history_update.get("file_size"),
+                        history_update.get("error_message"),
+                        self.current_history_id,
+                    ))
+                    self.db.connection.commit()
+                    
+                    # Atualiza caminho do arquivo no vídeo
+                    if file_path and success and self.video_dao and self.current_video_info:
+                        self.current_video_info["file_path"] = file_path
+                        self.video_dao.upsert(self.current_video_info)
+                    
+                except Exception as e:
+                    log.error(f"Erro ao atualizar histórico: {e}")
+
+            # Atualiza aba de histórico se disponível
+            if self.history_tab_ref:
+                try:
+                    log.debug("Atualizando aba de histórico automaticamente")
+                    self.history_tab_ref()
+                except Exception as e:
+                    log.warning(f"Erro ao atualizar aba de histórico: {e}")
 
             if success:
                 self.progress_var.set(100)
@@ -259,6 +393,10 @@ class DownloadTab:
                 self.progress_var.set(0)
                 self.status_label.config(text=msg, foreground="red")
                 messagebox.showerror("Erro", msg)
+
+            # Limpa variáveis
+            self.current_video_info = None
+            self.current_history_id = None
 
             log.info(f"Download finalizado: {msg}")
 
