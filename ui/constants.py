@@ -42,6 +42,7 @@ QUEUE_BUTTON_CLEAR = "Limpar Concluídos"
 # Textos da aba de Histórico
 HISTORY_TITLE = "Histórico de Downloads"
 HISTORY_BUTTON_REFRESH = "Atualizar"
+HISTORY_BUTTON_RETRY_ALL = "Re-tentar todos"
 HISTORY_MENU_OPEN_FOLDER = "Abrir Pasta"
 HISTORY_MENU_RETRY = "Tentar Novamente"
 HISTORY_MENU_DELETE = "Deletar"

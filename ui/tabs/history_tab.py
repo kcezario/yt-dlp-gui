@@ -21,6 +21,7 @@ from ui.constants import (
     COLUMN_WIDTHS_HISTORY,
     FONT_TITLE,
     HISTORY_BUTTON_REFRESH,
+    HISTORY_BUTTON_RETRY_ALL,
     HISTORY_MENU_DELETE,
     HISTORY_MENU_OPEN_FOLDER,
     HISTORY_MENU_RETRY,
@@ -69,7 +70,7 @@ class HistoryTab:
         main_container = ttk.Frame(self.frame, padding=PADDING_DEFAULT)
         main_container.pack(fill=tk.BOTH, expand=True)
 
-        # Título e botão de atualizar
+        # Título e botões de controle
         header_frame = ttk.Frame(main_container)
         header_frame.pack(fill=tk.X, pady=(0, 10))
 
@@ -80,12 +81,23 @@ class HistoryTab:
         )
         title_label.pack(side=tk.LEFT)
 
+        # Frame para botões à direita
+        button_frame = ttk.Frame(header_frame)
+        button_frame.pack(side=tk.RIGHT)
+
+        retry_all_button = ttk.Button(
+            button_frame,
+            text=HISTORY_BUTTON_RETRY_ALL,
+            command=self._retry_all_failed
+        )
+        retry_all_button.pack(side=tk.LEFT, padx=(0, 5))
+
         refresh_button = ttk.Button(
-            header_frame,
+            button_frame,
             text=HISTORY_BUTTON_REFRESH,
             command=self.load_history
         )
-        refresh_button.pack(side=tk.RIGHT)
+        refresh_button.pack(side=tk.LEFT)
 
         # Lista de vídeos
         self.video_list = VideoList(
@@ -385,6 +397,94 @@ class HistoryTab:
         """
         # Pode ser expandido para mostrar detalhes ou ações
         log.debug(f"Item selecionado: {item.get('Título')}")
+
+    def _retry_all_failed(self) -> None:
+        """Tenta novamente todos os downloads que falharam."""
+        if not self.queue_manager:
+            messagebox.showerror("Erro", "Gerenciador de fila não disponível.")
+            return
+        
+        try:
+            # Busca todos os itens do histórico (sem limite para pegar todos os falhados)
+            all_history = self.history_dao.get_history(limit=1000)  # Limite alto para pegar todos
+            
+            # Filtra apenas os que falharam e têm URL
+            failed_items = [
+                item for item in all_history
+                if item.get("status") == "failed" and item.get("video_url")
+            ]
+            
+            if not failed_items:
+                messagebox.showinfo(
+                    "Informação",
+                    "Não há downloads com falha para tentar novamente."
+                )
+                return
+            
+            # Confirmação
+            response = messagebox.askyesno(
+                "Confirmar Re-tentativa",
+                f"Tentar novamente {len(failed_items)} download(s) que falharam?\n\n"
+                f"Os downloads serão adicionados à fila novamente."
+            )
+            
+            if not response:
+                return
+            
+            # Processa cada item falhado
+            success_count = 0
+            error_count = 0
+            
+            for item in failed_items:
+                try:
+                    video_url = item.get("video_url")
+                    video_id = item.get("video_id")
+                    title = item.get("video_title") or item.get("playlist_title") or "Desconhecido"
+                    
+                    # Determina o caminho de destino
+                    file_path = item.get("file_path")
+                    if file_path:
+                        download_path = str(Path(file_path).parent)
+                    else:
+                        download_path = Config.DEFAULT_DOWNLOAD_PATH
+                    
+                    # Tenta determinar o formato baseado na extensão do arquivo ou usa MP4 como padrão
+                    mode = "mp4"  # Padrão
+                    if file_path:
+                        ext = Path(file_path).suffix.lower()
+                        if ext == ".mp3":
+                            mode = "mp3"
+                        elif ext in [".mp4", ".m4a", ".webm"]:
+                            mode = "mp4"
+                    
+                    # Adiciona à fila
+                    self.queue_manager.add_item(
+                        url=video_url,
+                        title=title,
+                        path=download_path,
+                        mode=mode,
+                        video_id=video_id,
+                    )
+                    success_count += 1
+                    log.debug(f"Download reenfileirado: {title}")
+                except Exception as e:
+                    error_count += 1
+                    log.error(f"Erro ao reenfileirar download '{title}': {e}")
+            
+            # Mostra resultado
+            message = f"Re-tentativa concluída:\n\n"
+            message += f"✓ {success_count} download(s) adicionado(s) à fila\n"
+            if error_count > 0:
+                message += f"✗ {error_count} download(s) com erro\n"
+            
+            messagebox.showinfo("Re-tentativa Concluída", message)
+            
+            # Atualiza a lista de histórico
+            self.refresh()
+            
+        except Exception as e:
+            log.error(f"Erro ao re-tentar todos os downloads: {e}")
+            messagebox.showerror("Erro", f"Não foi possível re-tentar os downloads:\n{e}")
 
     def refresh(self) -> None:
         """Atualiza a lista de histórico."""
